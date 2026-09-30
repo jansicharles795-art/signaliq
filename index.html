@@ -1,0 +1,771 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SIGNALIQ – IQ and WAV signal analysis prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#EEF1F0; --panel:#FFFFFF; --ink:#10201E; --muted:#5A6B68; --line:#D5DEDB; --soft:#E6EEEC;
+  --blue:#0B8F82; --navy:#0B4F49; --green:#1E8A3E; --orange:#D9651A; --red:#C62828;
+  --scope:#08121A; --scope-grid:#16303A; --scope-ink:#9FB4CC; --glow:rgba(11,143,130,.18);
+  --sans:"Space Grotesk",system-ui,-apple-system,"Segoe UI",Arial,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#070E14; --panel:#0E1922; --ink:#E4EEEC; --muted:#8CA3A0; --line:#1D303A; --soft:#132430;
+    --blue:#2DD4BF; --navy:#7FE6D8; --green:#4CC46E; --orange:#F0894A; --red:#EF6B6B; --glow:rgba(45,212,191,.16);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#070E14; --panel:#0E1922; --ink:#E4EEEC; --muted:#8CA3A0; --line:#1D303A; --soft:#132430;
+  --blue:#2DD4BF; --navy:#7FE6D8; --green:#4CC46E; --orange:#F0894A; --red:#EF6B6B; --glow:rgba(45,212,191,.16);
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:inherit}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.45;-webkit-text-size-adjust:100%;
+  background-image:radial-gradient(900px 300px at 85% -80px,var(--glow),transparent 70%)}
+button,input,select{font:inherit;color:inherit}
+h1,h2,h3,p{margin:0}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+[hidden]{display:none!important}
+
+/* header */
+.top{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:22px 28px 14px;max-width:1600px;margin:0 auto;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:14px}
+.brand svg{flex:none;border-radius:11px;box-shadow:0 0 0 1px var(--line),0 6px 20px var(--glow)}
+.brand h1{font-size:26px;font-weight:700;letter-spacing:.14em;color:var(--ink);line-height:1.1}
+.brand p{color:var(--muted);font-size:13px;margin-top:2px}
+.tag{font-family:var(--mono);font-size:11.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--blue);border:1px solid var(--blue);border-radius:6px;padding:5px 11px;background:transparent}
+
+/* pipeline */
+.pipe-wrap{max-width:1600px;margin:0 auto;padding:4px 28px 18px}
+.pipe{list-style:none;margin:0;padding:8px;display:flex;gap:6px;overflow-x:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px}
+.pipe li{flex:1 0 108px;display:grid;grid-template-columns:auto 1fr;column-gap:9px;align-items:center;padding:7px 10px;border-radius:8px;border:1px solid transparent;transition:background .2s,border-color .2s}
+.pipe li .dot{grid-row:1/3}
+.dot{width:24px;height:24px;border-radius:7px;display:grid;place-items:center;font-size:11.5px;font-weight:600;background:var(--soft);color:var(--muted);border:1px solid var(--line);font-family:var(--mono)}
+.pipe li.active{background:var(--soft);border-color:var(--blue)}
+.pipe li.active .dot{border-color:var(--blue);color:var(--blue);background:var(--panel);animation:pulse 1s ease-in-out infinite}
+.pipe li.done .dot{background:var(--blue);border-color:var(--blue);color:var(--bg)}
+.pipe li.error{border-color:var(--red)}
+.pipe li.error .dot{background:var(--red);border-color:var(--red);color:#fff}
+.pipe .nm{font-size:12.5px;font-weight:600;line-height:1.2}
+.pipe .ms{font-family:var(--mono);font-size:10.5px;color:var(--muted);min-height:14px;line-height:1.2}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 var(--glow)}50%{box-shadow:0 0 0 6px transparent}}
+@media (prefers-reduced-motion: reduce){.pipe li.active .dot{animation:none}}
+
+/* layout */
+.layout{display:grid;grid-template-columns:292px minmax(0,1fr);gap:22px;max-width:1600px;margin:0 auto;padding:0 28px 36px;align-items:start}
+@media (max-width:960px){.layout{grid-template-columns:1fr;padding:0 14px 28px}.top,.pipe-wrap{padding-left:14px;padding-right:14px}.side{position:static!important;max-height:none!important}}
+.side{display:flex;flex-direction:column;gap:12px;position:sticky;top:14px;max-height:calc(100vh - 28px);overflow-y:auto;padding-right:2px;counter-reset:sec;scrollbar-width:thin}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px}
+.side .panel>h2{counter-increment:sec;display:flex;align-items:center;gap:8px;font-size:11.5px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;padding:13px 14px 0;color:var(--muted)}
+.side .panel>h2::before{content:counter(sec,decimal-leading-zero);font-family:var(--mono);color:var(--blue);letter-spacing:0}
+.panel>h2{font-size:12px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;padding:14px 16px 0;color:var(--muted)}
+.pad{padding:12px 14px 14px}
+
+.drop{display:block;position:relative;border:1.5px dashed var(--blue);border-radius:10px;padding:22px 12px;text-align:center;cursor:pointer;background:var(--soft);transition:background .15s,box-shadow .15s}
+.drop:hover,.drop.over{background:var(--panel);box-shadow:0 0 0 4px var(--glow)}
+.drop b{display:block;font-weight:600;margin-bottom:2px;color:var(--ink)}
+.drop span{color:var(--muted);font-size:12px;font-family:var(--mono)}
+.drop input{position:absolute;opacity:0;width:1px;height:1px}
+.drop:focus-within{outline:2px solid var(--blue);outline-offset:2px}
+.samples{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.btn{border:1px solid var(--line);background:var(--panel);border-radius:9px;padding:9px 11px;cursor:pointer;text-align:left;line-height:1.25;font-weight:500;transition:border-color .15s,background .15s}
+.btn:hover{border-color:var(--blue);background:var(--soft)}
+.btn small{display:block;color:var(--muted);font-size:11px;font-family:var(--mono);font-weight:400;margin-top:1px}
+.btn.primary{background:var(--blue);border-color:var(--blue);color:var(--bg);font-weight:600;text-align:center}
+.btn.primary:hover{filter:brightness(1.08);background:var(--blue)}
+
+.field{display:grid;gap:5px;margin-bottom:11px}
+.field:last-child{margin-bottom:0}
+.field label,.field .lb{font-size:12px;color:var(--muted)}
+.field select,.field input[type=number]{width:100%;border:1px solid var(--line);background:var(--bg);border-radius:8px;padding:6px 9px;min-height:36px;font-family:var(--mono);font-size:13px}
+.field select:focus,.field input:focus{border-color:var(--blue)}
+.row2{display:grid;grid-template-columns:1fr 88px;gap:6px}
+.chk{display:flex;gap:9px;align-items:center;font-size:13.5px;margin-bottom:9px}
+.chk input{width:16px;height:16px;accent-color:var(--blue)}
+.hint{font-size:11.5px;color:var(--muted);margin-top:6px;line-height:1.4}
+
+/* results */
+.main{display:flex;flex-direction:column;gap:16px;min-width:0}
+.alert{border:1px solid var(--red);border-left-width:4px;background:color-mix(in srgb,var(--red) 10%,var(--panel));border-radius:10px;padding:12px 16px}
+.alert b{color:var(--red)}
+.summary{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;padding:16px 18px 10px}
+.summary .fn{font-family:var(--mono);font-weight:500;font-size:15px;word-break:break-all}
+.badge{display:inline-block;font-size:11.5px;padding:2px 10px;border-radius:6px;background:var(--soft);color:var(--navy);border:1px solid var(--line);font-family:var(--mono);margin:2px 0}
+.notes{margin:0;padding:0 18px 14px 36px;color:var(--muted);font-size:12.5px}
+.notes li{margin:2px 0}
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:var(--line);border-top:1px solid var(--line);border-radius:0 0 12px 12px;overflow:hidden}
+.metrics>div{padding:14px 18px;background:var(--panel);border-top:2px solid transparent}
+.metrics>div:hover{border-top-color:var(--blue)}
+.metrics dt{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;font-weight:600}
+.metrics dd{margin:5px 0 0;font-family:var(--mono);font-size:21px;font-weight:500;color:var(--ink);word-break:break-word}
+.plots{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,500px),1fr));gap:16px}
+.plot .hd{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:13px 16px 9px}
+.plot .hd h3{font-size:12px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.plot .hd .ctl{display:flex;gap:8px;align-items:center;font-size:11.5px;color:var(--muted);font-family:var(--mono)}
+.plot .hd select{border:1px solid var(--line);background:var(--bg);border-radius:6px;padding:3px 6px;font-size:12px;font-family:var(--mono)}
+.plot .hd input[type=range]{width:110px;accent-color:var(--blue)}
+.cv{margin:0 12px 12px;height:320px;border-radius:8px;overflow:hidden;background:var(--scope);border:1px solid var(--scope-grid)}
+.cv canvas{display:block;width:100%;height:100%}
+.legend{display:flex;gap:12px;font-size:12px;color:var(--muted)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,440px),1fr));gap:16px;align-items:start}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{text-align:left;padding:7px 16px;border-top:1px solid var(--line);vertical-align:top}
+th{font-weight:400;color:var(--muted);width:46%}
+td{font-family:var(--mono);font-size:12.5px;word-break:break-word}
+tr.grp th{background:var(--soft);color:var(--blue);font-weight:600;font-size:11px;letter-spacing:.09em;text-transform:uppercase;width:auto}
+.peaks td,.peaks th{width:auto}
+.peaks thead th{background:var(--soft);color:var(--blue);font-size:11px;letter-spacing:.06em;text-transform:uppercase;font-weight:600}
+.peaks small{color:var(--muted)}
+.actions{display:flex;flex-wrap:wrap;gap:8px;padding:0 16px 10px}
+.actions .btn{text-align:center;padding:9px 16px}
+.msg{padding:0 16px 10px;font-size:12.5px;color:var(--green);min-height:20px}
+details{padding:0 16px 16px}
+summary{cursor:pointer;color:var(--blue);font-size:13px;padding:4px 0}
+pre{margin:8px 0 0;max-height:260px;overflow:auto;background:var(--scope);color:#BFD3EA;padding:12px 14px;border-radius:8px;font-family:var(--mono);font-size:11.5px;line-height:1.5}
+.foot{color:var(--muted);font-size:12px;padding:2px 2px 0}
+.busy{opacity:.55;pointer-events:none}
+.empty{display:grid;justify-items:center;text-align:center;gap:8px;padding:56px 24px;border-style:dashed;color:var(--muted)}
+.empty svg{color:var(--blue);opacity:.85}
+.empty h2{padding:0;font-size:15px;letter-spacing:.06em;color:var(--ink)}
+.empty p{max-width:420px;font-size:13px}
+/* loader */
+.loader{display:grid;grid-template-columns:132px 1fr;gap:18px;align-items:center;padding:14px 18px;border-color:var(--blue);box-shadow:0 0 0 4px var(--glow)}
+.wave{width:132px;height:48px;background:var(--scope);border-radius:8px;border:1px solid var(--scope-grid)}
+.wave path{fill:none;stroke:#2DD4BF;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.wave .scroll{animation:scroll 1.2s linear infinite}
+@keyframes scroll{to{transform:translateX(-100px)}}
+.ltop{display:flex;justify-content:space-between;gap:12px;font-weight:600;margin-bottom:8px}
+.ltop span{font-family:var(--mono);color:var(--blue)}
+.bar{height:9px;border-radius:99px;background:var(--soft);border:1px solid var(--line);overflow:hidden}
+.bar i{display:block;height:100%;width:0;border-radius:99px;transition:width .4s ease;background:repeating-linear-gradient(115deg,var(--blue) 0 10px,color-mix(in srgb,var(--blue) 70%,var(--panel)) 10px 20px);background-size:28px 100%;animation:stripes .8s linear infinite}
+@keyframes stripes{to{background-position:28px 0}}
+.lsub{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:9px;color:var(--muted);font-family:var(--mono);font-size:12px}
+.lsub span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.lsub .btn{padding:5px 12px;flex:none}
+.lsub .btn small{display:inline;margin-left:6px}
+@media (max-width:560px){.loader{grid-template-columns:1fr}.wave{display:none}}
+@media (prefers-reduced-motion: reduce){.wave .scroll,.bar i{animation:none}}
+
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <svg width="42" height="42" viewBox="0 0 42 42" aria-hidden="true"><rect width="42" height="42" rx="9" fill="#0A1626"/><path d="M4 22c3-11 6-11 8.5 0s5.500 11 8.500 0 5.500-11 8.500 0 5 11 8 0" fill="none" stroke="#2DD4BF" stroke-width="2" stroke-linecap="round"/><g fill="#E8762B"><rect x="9" y="30" width="3" height="6" rx="1"/><rect x="16" y="26" width="3" height="10" rx="1"/><rect x="23" y="31" width="3" height="5" rx="1"/><rect x="30" y="28" width="3" height="8" rx="1"/></g></svg>
+    <div><h1>SIGNALIQ</h1><p>Automated IQ and WAV signal analysis and parameter extraction</p></div>
+  </div>
+  <span class="tag">Prototype for SIH26147 · NTRO</span>
+</header>
+
+<div class="pipe-wrap">
+  <ol class="pipe" id="pipe" aria-label="Analysis pipeline progress">
+    <li data-s="validate" title="Checks file type, readability and metadata"><span class="dot">1</span><span class="nm">Validate</span><span class="ms"></span></li>
+    <li data-s="decode" title="Extracts samples into a standard array"><span class="dot">2</span><span class="nm">Decode</span><span class="ms"></span></li>
+    <li data-s="pre" title="DC removal and normalization"><span class="dot">3</span><span class="nm">Preprocess</span><span class="ms"></span></li>
+    <li data-s="time" title="Amplitude, RMS, peak and IQ statistics"><span class="dot">4</span><span class="nm">Time domain</span><span class="ms"></span></li>
+    <li data-s="freq" title="Windowed FFT, PSD and spectrogram"><span class="dot">5</span><span class="nm">Frequency</span><span class="ms"></span></li>
+    <li data-s="param" title="Peaks, bandwidth, SNR estimate"><span class="dot">6</span><span class="nm">Parameters</span><span class="ms"></span></li>
+    <li data-s="viz" title="Waveform, spectrum, spectrogram, constellation"><span class="dot">7</span><span class="nm">Visualize</span><span class="ms"></span></li>
+    <li data-s="report" title="Structured JSON and CSV output"><span class="dot">8</span><span class="nm">Report</span><span class="ms"></span></li>
+  </ol>
+</div>
+
+<div class="layout">
+  <aside class="side" aria-label="Input and settings">
+    <section class="panel">
+      <h2>Load a signal</h2>
+      <div class="pad">
+        <label class="drop" id="drop"><input type="file" id="file"><b>Choose or drop a file</b><span>.wav, .iq, .cf32, .cs16, .cu8, .bin and similar</span></label>
+        <p class="hint">Files stay in your browser. The first 4,194,304 samples are analysed.</p>
+      </div>
+    </section>
+    <section class="panel">
+      <h2>Built-in sample signals</h2>
+      <div class="pad samples">
+        <button class="btn" data-sample="qpsk">QPSK burst<small>IQ, 1 MS/s</small></button>
+        <button class="btn" data-sample="fm">FM tone<small>IQ, 250 kS/s</small></button>
+        <button class="btn" data-sample="chirp">Chirp sweep<small>IQ, 2 MS/s</small></button>
+        <button class="btn" data-sample="audio">Audio tones<small>WAV, 44.1 kHz</small></button>
+      </div>
+    </section>
+    <section class="panel">
+      <h2>Signal settings</h2>
+      <div class="pad">
+        <div class="field" id="f-iqfmt"><label for="iqFormat">IQ sample format</label>
+          <select id="iqFormat"><option value="auto">Auto-detect</option><option value="cf32">Complex float32</option><option value="ci16">Complex int16</option><option value="ci8">Complex int8</option><option value="cu8">Complex uint8 (RTL-SDR)</option><option value="cf64">Complex float64</option></select></div>
+        <div class="field" id="f-wavmode"><label for="wavMode">WAV channels</label>
+          <select id="wavMode"><option value="ch0">Channel 1 (left)</option><option value="ch1">Channel 2 (right)</option><option value="mix">Mix all channels</option><option value="iq">Stereo as I (left) and Q (right)</option></select></div>
+        <div class="field"><span class="lb" id="fsLbl">Sample rate</span>
+          <div class="row2"><input type="number" id="fs" min="0" step="any" value="1" aria-labelledby="fsLbl"><select id="fsU" aria-label="Sample rate unit"><option value="1">Hz</option><option value="1e3">kHz</option><option value="1e6" selected>MHz</option></select></div>
+          <p class="hint" id="fsHint">Raw IQ files do not store the sample rate. Set it to match the capture.</p></div>
+        <div class="field" id="f-fc"><span class="lb" id="fcLbl">Centre frequency (optional)</span>
+          <div class="row2"><input type="number" id="fc" min="0" step="any" placeholder="none" aria-labelledby="fcLbl"><select id="fcU" aria-label="Centre frequency unit"><option value="1">Hz</option><option value="1e3">kHz</option><option value="1e6" selected>MHz</option><option value="1e9">GHz</option></select></div></div>
+      </div>
+    </section>
+    <section class="panel">
+      <h2>Preprocessing and analysis</h2>
+      <div class="pad">
+        <label class="chk"><input type="checkbox" id="dc" checked> Remove DC offset</label>
+        <label class="chk"><input type="checkbox" id="norm"> Normalize peak to full scale</label>
+        <div class="field"><label for="win">Window</label>
+          <select id="win"><option value="hann">Hann</option><option value="hamming">Hamming</option><option value="blackman">Blackman</option><option value="rect">Rectangular</option></select></div>
+        <div class="field"><label for="nfft">FFT size</label>
+          <select id="nfft"><option>1024</option><option>2048</option><option selected>4096</option><option>8192</option><option>16384</option></select></div>
+      </div>
+    </section>
+  </aside>
+
+  <main class="main" id="mainCol">
+    <div class="panel loader" id="loader" hidden role="status" aria-live="polite">
+      <svg class="wave" viewBox="0 0 200 40" preserveAspectRatio="none" aria-hidden="true"><g class="scroll"><path id="lWave" d=""/></g></svg>
+      <div class="lbody">
+        <div class="ltop"><b id="lTxt">Starting…</b><span id="lPct">0%</span></div>
+        <div class="bar"><i id="lBar"></i></div>
+        <div class="lsub"><span id="lSub"></span><button class="btn" id="lCancel" type="button">Cancel <small>Esc</small></button></div>
+      </div>
+    </div>
+    <div class="alert" id="alert" role="alert" hidden></div>
+    <div class="panel empty" id="empty">
+      <svg width="64" height="40" viewBox="0 0 64 40" aria-hidden="true"><path d="M2 20c5-16 9-16 12 0s7 16 12 0 7-16 12 0 7 16 12 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <h2>No signal loaded yet</h2>
+      <p>Choose or drop a WAV or raw IQ file in the sidebar. Results, plots and the report appear here once the analysis finishes.</p>
+    </div>
+    <div id="results" hidden>
+      <div class="panel" style="margin-bottom:16px">
+        <div class="summary"><span class="fn" id="sFile"></span><span id="sBadges"></span></div>
+        <ul class="notes" id="sNotes"></ul>
+        <dl class="metrics" id="metrics" style="margin:0;border-top:1px solid var(--line)"></dl>
+      </div>
+      <div class="plots">
+        <section class="panel plot">
+          <div class="hd"><h3>Time domain</h3>
+            <div class="ctl"><span class="legend" id="tLegend"></span>
+              <label class="sr" for="tWin">Window length</label><select id="tWin"><option value="256">256</option><option value="1024" selected>1,024</option><option value="4096">4,096</option><option value="16384">16,384</option><option value="65536">65,536</option></select>
+              <label class="sr" for="tPos">Window position</label><input type="range" id="tPos" min="0" max="1000" value="0"></div></div>
+          <div class="cv"><canvas id="cvTime" role="img" aria-label="Time-domain waveform"></canvas></div>
+        </section>
+        <section class="panel plot">
+          <div class="hd"><h3>Frequency spectrum</h3><div class="ctl" id="specInfo"></div></div>
+          <div class="cv"><canvas id="cvSpec" role="img" aria-label="Power spectral density"></canvas></div>
+        </section>
+        <section class="panel plot">
+          <div class="hd"><h3>Spectrogram</h3><div class="ctl" id="sgInfo"></div></div>
+          <div class="cv"><canvas id="cvSg" role="img" aria-label="Spectrogram"></canvas></div>
+        </section>
+        <section class="panel plot">
+          <div class="hd"><h3 id="cTitle">I/Q constellation</h3><div class="ctl" id="cInfo"></div></div>
+          <div class="cv"><canvas id="cvC" role="img" aria-label="Constellation or amplitude distribution"></canvas></div>
+        </section>
+      </div>
+      <div class="cols" style="margin-top:16px">
+        <section class="panel"><h2>Extracted parameters</h2><div style="padding-top:8px"><table id="ptable"></table></div></section>
+        <div style="display:grid;gap:16px">
+          <section class="panel"><h2>Strongest spectral peaks</h2><div style="padding-top:8px"><table class="peaks" id="peaks"></table></div></section>
+          <section class="panel"><h2>Report</h2>
+            <p class="hint" style="padding:6px 14px 10px">Structured results with every value in SI units.</p>
+            <div class="actions"><button class="btn primary" id="bJson" hidden>Save JSON</button><button class="btn primary" id="bCsv" hidden>Save CSV</button><button class="btn" id="bCopy">Copy JSON</button></div>
+            <div class="msg" id="rMsg" role="status" aria-live="polite"></div>
+            <details><summary>Preview JSON</summary><pre id="jsonPre"></pre></details>
+          </section>
+        </div>
+      </div>
+      <p class="foot" style="margin-top:14px">Spectral power is in dB relative to a full-scale amplitude of 1.0, per FFT bin. SNR and bandwidth values are estimates from the averaged spectrum.</p>
+    </div>
+  </main>
+</div>
+<script>
+(function(){
+'use strict';
+const MAX_SAMPLES=4194304, MAX_BYTES=64*1024*1024, MAX_FRAMES=400;
+const $=(s,el)=>(el||document).querySelector(s);
+const $$=(s,el)=>Array.from((el||document).querySelectorAll(s));
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const CANCEL={};
+
+/* ---------- number formatting ---------- */
+function sig(v,d){ if(v===0||!isFinite(v)) return v; const mag=Math.floor(Math.log10(Math.abs(v))); const q=Math.pow(10,mag-d+1); return Number((Math.round(v/q)*q).toFixed(Math.max(0,d-1-mag))); }
+function fnum(v,d){ d=d||4; if(v==null||!isFinite(v)) return '—'; if(v===0) return '0'; const a=Math.abs(v); if(a>=1e9||a<1e-4) return v.toExponential(2); return String(sig(v,d)); }
+function fhz(v,d){ d=d||4; if(v==null||!isFinite(v)) return '—'; const a=Math.abs(v); let s=1,u='Hz'; if(a>=1e9){s=1e9;u='GHz';}else if(a>=1e6){s=1e6;u='MHz';}else if(a>=1e3){s=1e3;u='kHz';} return String(sig(v/s,d))+' '+u; }
+function fdb(v,d){ return (v==null||!isFinite(v))?'—':v.toFixed(d==null?1:d)+' dB'; }
+function ftime(s){ if(s==null||!isFinite(s)) return '—'; const a=Math.abs(s); if(a>=1) return String(sig(s,4))+' s'; if(a>=1e-3) return String(sig(s*1e3,4))+' ms'; if(a>=1e-6) return String(sig(s*1e6,4))+' µs'; return String(sig(s*1e9,4))+' ns'; }
+function fbytes(b){ if(b<1024) return b+' B'; if(b<1048576) return (b/1024).toFixed(1)+' KB'; if(b<1073741824) return (b/1048576).toFixed(1)+' MB'; return (b/1073741824).toFixed(2)+' GB'; }
+function fint(n){ return Math.round(n).toLocaleString('en-US'); }
+function dbfs(x){ return x>0?20*Math.log10(x):-Infinity; }
+
+/* ---------- FFT ---------- */
+const fftCache={};
+function getFFT(n){
+  if(fftCache[n]) return fftCache[n];
+  const levels=Math.round(Math.log2(n)), cos=new Float64Array(n/2), sin=new Float64Array(n/2), rev=new Uint32Array(n);
+  for(let i=0;i<n/2;i++){cos[i]=Math.cos(2*Math.PI*i/n);sin[i]=Math.sin(2*Math.PI*i/n);}
+  for(let i=0;i<n;i++) rev[i]=(rev[i>>1]>>1)|((i&1)<<(levels-1));
+  const f=function(re,im){
+    for(let i=0;i<n;i++){const j=rev[i]; if(j>i){let t=re[i];re[i]=re[j];re[j]=t;t=im[i];im[i]=im[j];im[j]=t;}}
+    for(let size=2;size<=n;size<<=1){
+      const half=size>>1, step=n/size;
+      for(let i=0;i<n;i+=size){
+        for(let j=i,k=0;j<i+half;j++,k+=step){
+          const l=j+half, tre=re[l]*cos[k]+im[l]*sin[k], tim=im[l]*cos[k]-re[l]*sin[k];
+          re[l]=re[j]-tre; im[l]=im[j]-tim; re[j]+=tre; im[j]+=tim;
+        }
+      }
+    }
+  };
+  fftCache[n]=f; return f;
+}
+function makeWindow(kind,n){
+  const w=new Float64Array(n);
+  for(let i=0;i<n;i++){
+    const x=2*Math.PI*i/n;
+    w[i]= kind==='hann'?0.5-0.5*Math.cos(x) : kind==='hamming'?0.54-0.46*Math.cos(x) : kind==='blackman'?0.42-0.5*Math.cos(x)+0.08*Math.cos(2*x) : 1;
+  }
+  return w;
+}
+
+/* ---------- WAV ---------- */
+function tag(dv,o){ return String.fromCharCode(dv.getUint8(o),dv.getUint8(o+1),dv.getUint8(o+2),dv.getUint8(o+3)); }
+function isRiffWave(buf){ if(buf.byteLength<12) return false; const dv=new DataView(buf); const t=tag(dv,0); return (t==='RIFF'||t==='RF64')&&tag(dv,8)==='WAVE'; }
+function parseWav(buf,fileSize){
+  if(!isRiffWave(buf)) throw new Error('This is not a valid WAV file: the RIFF/WAVE header is missing. If it is raw IQ data, rename it without the .wav extension.');
+  const dv=new DataView(buf); let pos=12, fmt=null, data=null;
+  while(pos+8<=buf.byteLength){
+    const id=tag(dv,pos), size=dv.getUint32(pos+4,true), body=pos+8;
+    if(id==='fmt '){
+      if(body+16>buf.byteLength) break;
+      fmt={format:dv.getUint16(body,true),channels:dv.getUint16(body+2,true),sampleRate:dv.getUint32(body+4,true),blockAlign:dv.getUint16(body+12,true),bits:dv.getUint16(body+14,true)};
+      if(fmt.format===0xFFFE&&size>=26&&body+26<=buf.byteLength) fmt.format=dv.getUint16(body+24,true);
+    } else if(id==='data'){
+      const avail=buf.byteLength-body; const declared=(size===0||size===0xFFFFFFFF)?(fileSize-body):size;
+      data={offset:body,bytes:Math.min(declared,avail),declared:Math.min(declared,fileSize-body)}; break;
+    }
+    pos=body+size+(size&1);
+  }
+  if(!fmt) throw new Error('The WAV file has no "fmt " chunk, so its sample format cannot be read.');
+  if(!data) throw new Error('The WAV file has no "data" chunk, so there are no samples to analyse.');
+  if(fmt.channels<1||fmt.sampleRate<1) throw new Error('The WAV header contains an invalid channel count or sample rate.');
+  const okPcm=fmt.format===1&&[8,16,24,32].includes(fmt.bits), okFlt=fmt.format===3&&[32,64].includes(fmt.bits);
+  if(!okPcm&&!okFlt) throw new Error('Unsupported WAV encoding (format code '+fmt.format+', '+fmt.bits+'-bit). Only PCM (8/16/24/32-bit) and IEEE float (32/64-bit) are supported.');
+  const bytesPer=fmt.bits/8; const blockAlign=fmt.blockAlign||bytesPer*fmt.channels;
+  const frames=Math.floor(data.bytes/blockAlign), totalFrames=Math.floor(data.declared/blockAlign);
+  return {format:fmt.format,channels:fmt.channels,sampleRate:fmt.sampleRate,bits:fmt.bits,bytesPer,blockAlign,offset:data.offset,frames,totalFrames,isFloat:fmt.format===3};
+}
+function sampleReader(dv,w){
+  if(w.isFloat) return w.bits===32?o=>dv.getFloat32(o,true):o=>dv.getFloat64(o,true);
+  switch(w.bits){
+    case 8: return o=>(dv.getUint8(o)-128)/128;
+    case 16: return o=>dv.getInt16(o,true)/32768;
+    case 24: return o=>{let b=dv.getUint8(o)|(dv.getUint8(o+1)<<8)|(dv.getUint8(o+2)<<16); return ((b<<8)>>8)/8388608;};
+    default: return o=>dv.getInt32(o,true)/2147483648;
+  }
+}
+function readWav(buf,w,mode){
+  const dv=new DataView(buf), n=Math.min(w.frames,MAX_SAMPLES), ch=w.channels, bp=w.bytesPer, rd=sampleReader(dv,w);
+  const iq=mode==='iq'&&ch>=2; const re=new Float32Array(n), im=iq?new Float32Array(n):null;
+  for(let i=0;i<n;i++){
+    const o=w.offset+i*w.blockAlign;
+    if(iq){re[i]=rd(o);im[i]=rd(o+bp);}
+    else if(mode==='ch1'&&ch>1) re[i]=rd(o+bp);
+    else if(mode==='mix'&&ch>1){let s=0;for(let c=0;c<ch;c++) s+=rd(o+c*bp);re[i]=s/ch;}
+    else re[i]=rd(o);
+  }
+  return {re,im,complex:iq};
+}
+
+/* ---------- raw IQ ---------- */
+const IQ_BYTES={cf32:8,ci16:4,ci8:2,cu8:2,cf64:16};
+const IQ_NAMES={cf32:'Complex float32',ci16:'Complex int16',ci8:'Complex int8',cu8:'Complex uint8',cf64:'Complex float64'};
+function autoIQ(name,buf){
+  const ext=(name.split('.').pop()||'').toLowerCase();
+  const map={cu8:'cu8',u8:'cu8',cs8:'ci8',ci8:'ci8',s8:'ci8',cs16:'ci16',ci16:'ci16',sc16:'ci16',s16:'ci16',cf32:'cf32',fc32:'cf32',cfile:'cf32',f32:'cf32',cf64:'cf64'};
+  if(map[ext]) return {fmt:map[ext],how:'file extension .'+ext};
+  if(buf.byteLength>=8&&buf.byteLength%8===0){
+    const n=Math.min(2048,Math.floor(buf.byteLength/4)), a=new Float32Array(buf,0,n); let ok=true,s=0;
+    for(let i=0;i<n;i++){const v=a[i]; if(!isFinite(v)||Math.abs(v)>1e4){ok=false;break;} s+=Math.abs(v);}
+    if(ok&&s/n>1e-7) return {fmt:'cf32',how:'a content check'};
+  }
+  if(buf.byteLength%4===0) return {fmt:'ci16',how:'a content check'};
+  return {fmt:'cu8',how:'a content check'};
+}
+function readIQ(buf,fmt,total){
+  const n=Math.min(total,MAX_SAMPLES), re=new Float32Array(n), im=new Float32Array(n);
+  if(fmt==='cf32'){const a=new Float32Array(buf,0,2*n);for(let i=0;i<n;i++){re[i]=a[2*i];im[i]=a[2*i+1];}}
+  else if(fmt==='cf64'){const a=new Float64Array(buf,0,2*n);for(let i=0;i<n;i++){re[i]=a[2*i];im[i]=a[2*i+1];}}
+  else if(fmt==='ci16'){const a=new Int16Array(buf,0,2*n);for(let i=0;i<n;i++){re[i]=a[2*i]/32768;im[i]=a[2*i+1]/32768;}}
+  else if(fmt==='ci8'){const a=new Int8Array(buf,0,2*n);for(let i=0;i<n;i++){re[i]=a[2*i]/128;im[i]=a[2*i+1]/128;}}
+  else {const a=new Uint8Array(buf,0,2*n);for(let i=0;i<n;i++){re[i]=(a[2*i]-127.5)/127.5;im[i]=(a[2*i+1]-127.5)/127.5;}}
+  return {re,im,complex:true};
+}
+function guessFromName(name){
+  const out={};
+  let m=name.match(/_(\d{6,})_(\d{4,})_fc/i); if(m){out.fc=+m[1];out.fs=+m[2];}
+  if(!out.fs){m=name.match(/(\d+(?:\.\d+)?)\s*(k|m)sps/i); if(m) out.fs=parseFloat(m[1])*(m[2].toLowerCase()==='m'?1e6:1e3);}
+  return out;
+}
+
+/* ---------- synthetic samples ---------- */
+function rng(seed){let a=seed>>>0;return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+function gauss(r){return Math.sqrt(-2*Math.log(r()+1e-12))*Math.cos(2*Math.PI*r());}
+function genSample(kind){
+  const r=rng(kind.length*7919+13);
+  if(kind==='qpsk'){
+    const fs=1e6,N=262144,sps=8,ns=Math.ceil(N/sps)+2, si=new Float32Array(ns), sq=new Float32Array(ns);
+    for(let k=0;k<ns;k++){si[k]=r()<.5?-1:1;sq[k]=r()<.5?-1:1;}
+    let i0=new Float32Array(N), q0=new Float32Array(N);
+    for(let n=0;n<N;n++){i0[n]=si[(n/sps)|0]/Math.SQRT2;q0[n]=sq[(n/sps)|0]/Math.SQRT2;}
+    for(let pass=0;pass<2;pass++){const a=new Float32Array(N),b=new Float32Array(N);for(let n=1;n<N-1;n++){a[n]=(i0[n-1]+i0[n]+i0[n+1])/3;b[n]=(q0[n-1]+q0[n]+q0[n+1])/3;}i0=a;q0=b;}
+    const re=new Float32Array(N),im=new Float32Array(N);
+    for(let n=0;n<N;n++){const ph=2*Math.PI*150e3*n/fs;re[n]=i0[n]+0.03*Math.cos(ph)+0.06*gauss(r);im[n]=q0[n]+0.03*Math.sin(ph)+0.06*gauss(r);}
+    return {name:'qpsk_burst.iq (built-in sample)',complex:true,re,im,fs,fc:433.92e6,label:'Built-in sample · QPSK, 8 samples per symbol'};
+  }
+  if(kind==='fm'){
+    const fs=250e3,N=262144,f0=20e3,fm=1e3,beta=5,re=new Float32Array(N),im=new Float32Array(N);
+    for(let n=0;n<N;n++){const ph=2*Math.PI*f0*n/fs+beta*Math.sin(2*Math.PI*fm*n/fs);re[n]=0.8*Math.cos(ph)+0.02*gauss(r);im[n]=0.8*Math.sin(ph)+0.02*gauss(r);}
+    return {name:'fm_tone.cf32 (built-in sample)',complex:true,re,im,fs,fc:100.1e6,label:'Built-in sample · FM, 1 kHz tone, 5 kHz deviation'};
+  }
+  if(kind==='chirp'){
+    const fs=2e6,N=524288,T=N/4,re=new Float32Array(N),im=new Float32Array(N); let ph=0;
+    for(let n=0;n<N;n++){const fr=-600e3+1.2e6*((n%T)/T); ph+=2*Math.PI*fr/fs; const on=((n%T)/T)<0.85?0.7:0.05; re[n]=on*Math.cos(ph)+0.02*gauss(r);im[n]=on*Math.sin(ph)+0.02*gauss(r);}
+    return {name:'chirp_sweep.cu8 (built-in sample)',complex:true,re,im,fs,fc:915e6,label:'Built-in sample · four linear sweeps, ±600 kHz'};
+  }
+  const fs=44100,N=132300,re=new Float32Array(N);
+  for(let n=0;n<N;n++){const t=n/fs; let v=0.35*Math.sin(2*Math.PI*440*t)*(0.8+0.2*Math.sin(2*Math.PI*3*t))+0.2*Math.sin(2*Math.PI*1320*t);
+    if(t>1&&t<2.5){const u=t-1;v+=0.25*Math.sin(2*Math.PI*(500*u+0.5*(5500/1.5)*u*u));}
+    re[n]=v+0.01*gauss(r);}
+  return {name:'audio_tones.wav (built-in sample)',complex:false,re,im:null,fs,fc:null,label:'Built-in sample · WAV, PCM 16-bit mono, 44.1 kHz'};
+}
+
+/* ---------- state, helpers ---------- */
+const FONT='"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace';
+const C={bg:'#0A1626',grid:'#1B3049',ink:'#9FB4CC',i:'#4FC3F7',q:'#E8762B',ok:'#4CC46E'};
+const STEPS=['validate','decode','pre','time','freq','param','viz','report'];
+let runId=0,cur=null,ST=null,ltimer=null,t0=0;
+const MIN_STAGE=350; /* minimum time each step stays visible, in ms */
+const LBL={validate:'Validating the file',decode:'Decoding samples',pre:'Cleaning the signal',time:'Measuring time-domain values',freq:'Computing spectrum and spectrogram',param:'Extracting parameters',viz:'Drawing the plots',report:'Building the report'};
+function prog(i,f,txt){const p=Math.min(100,Math.round((i+f)/STEPS.length*100));$('#lBar').style.width=p+'%';$('#lPct').textContent=p+'%';if(txt)$('#lTxt').textContent=txt;}
+function startLoader(src){$('#loader').hidden=false;prog(0,0,'Starting…');t0=performance.now();clearInterval(ltimer);
+  const tick=()=>{$('#lSub').textContent=src.name+' · '+((performance.now()-t0)/1000).toFixed(1)+' s';};tick();ltimer=setInterval(tick,100);}
+function stopLoader(id){clearInterval(ltimer);setTimeout(()=>{if(id===runId)$('#loader').hidden=true;},350);}
+async function readBuf(f,id){const n=Math.min(f.size,MAX_BYTES),out=new Uint8Array(n),CH=2<<20;
+  for(let o=0;o<n;o+=CH){if(id!==runId)throw CANCEL;out.set(new Uint8Array(await f.slice(o,Math.min(n,o+CH)).arrayBuffer()),o);
+    prog(0,Math.min(1,(o+CH)/n),'Reading '+fbytes(Math.min(o+CH,n))+' of '+fbytes(n));await sleep(0);}
+  return out.buffer;}
+const frame=()=>new Promise(r=>{requestAnimationFrame(()=>r());setTimeout(r,60);});
+const getFs=()=>(+$('#fs').value)*(+$('#fsU').value);
+const getFc=()=>{const v=$('#fc').value;return v===''||!isFinite(+v)?null:(+v)*(+$('#fcU').value);};
+function setUnit(inp,sel,hz){const u=Array.from(sel.options).map(o=>+o.value);let k=0;for(let i=0;i<u.length;i++) if(hz>=u[i]) k=i;sel.selectedIndex=k;inp.value=String(sig(hz/u[k],6));}
+function setStep(n,st,ms){const li=$('#pipe [data-s="'+n+'"]');li.className=st;$('.ms',li).textContent=ms||'';}
+async function stage(id,n,fn){
+  if(id!==runId) throw CANCEL; const si=STEPS.indexOf(n); prog(si,0,LBL[n]+'…'); setStep(n,'active','…'); await frame(); if(id!==runId) throw CANCEL;
+  const t=performance.now(); let r;
+  try{r=await fn();}catch(e){setStep(n,'error','failed');throw e;}
+  const real=Math.max(1,Math.round(performance.now()-t)),wait=MIN_STAGE-(performance.now()-t);
+  if(wait>0){prog(si,0.7);await sleep(wait);}
+  if(id!==runId) throw CANCEL; prog(si,1); setStep(n,'done',real+' ms'); return r;
+}
+function spectrum(P,start,n,w,ws,fft,fr,fi,out){
+  const {x,y,complex,N}=P;
+  for(let i=0;i<n;i++){const j=start+i;fr[i]=j<N?x[j]*w[i]:0;fi[i]=(complex&&j<N)?y[j]*w[i]:0;}
+  fft(fr,fi); const sc=(complex?1:4)/(ws*ws);
+  if(complex){const h=n>>1;for(let k=0;k<n;k++) out[(k+h)%n]=(fr[k]*fr[k]+fi[k]*fi[k])*sc;}
+  else{for(let k=0;k<=n>>1;k++) out[k]=(fr[k]*fr[k]+fi[k]*fi[k])*sc; out[0]/=4; out[n>>1]/=4;}
+}
+function median(a){const s=Float64Array.from(a).sort();return s[s.length>>1];}
+function pctl(a,p){const s=Float64Array.from(a).sort();return s[Math.min(s.length-1,Math.floor(p*s.length))];}
+
+/* ---------- analysis pipeline ---------- */
+async function analyze(src){
+  const id=++runId, main=$('#results'); main.classList.add('busy'); startLoader(src); resetPipe(); $('#alert').hidden=true;
+  try{
+    await stage(id,'validate',async()=>{
+      if(src.sample) return;
+      if(!src.size) throw new Error('The file is empty (0 bytes).');
+      if(!src.buf) src.buf=await readBuf(src.file,id);
+      if(src.buf.byteLength<16) throw new Error('The file is too small ('+src.buf.byteLength+' bytes) to hold a signal.');
+      src.wav=/\.wav$/i.test(src.name)||isRiffWave(src.buf);
+    });
+    const wav=!!src.wav; $('#f-iqfmt').hidden=wav; $('#f-wavmode').hidden=!wav||!!src.sample;
+
+    const D=await stage(id,'decode',async()=>{
+      const notes=[]; let d,fs=getFs(),label,lock=false;
+      if(src.sample){const s=src.sample;d={re:s.re,im:s.im,complex:s.complex};label=s.complex?'IQ (synthetic)':'WAV (synthetic)';notes.push(s.label);}
+      else if(wav){
+        const w=parseWav(src.buf,src.size),mode=$('#wavMode').value; d=readWav(src.buf,w,mode); fs=w.sampleRate; lock=true;
+        label='WAV '+(w.isFloat?'float':'PCM')+' '+w.bits+'-bit, '+w.channels+' ch';
+        notes.push('Sample rate '+fhz(fs)+' read from the WAV header.');
+        if(mode==='iq'&&w.channels<2) notes.push('The file has one channel, so it is analysed as real audio.');
+        if(w.totalFrames>d.re.length) notes.push('Only the first '+fint(d.re.length)+' of '+fint(w.totalFrames)+' frames were analysed.');
+      } else {
+        const sel=$('#iqFormat').value; let fmt=sel,how='your selection';
+        if(sel==='auto'){const a=autoIQ(src.name,src.buf);fmt=a.fmt;how=a.how;}
+        const bp=IQ_BYTES[fmt],total=Math.floor(src.buf.byteLength/bp);
+        if(total<64) throw new Error('Only '+total+' complex samples were found, and at least 64 are needed. Try a different IQ sample format.');
+        d=readIQ(src.buf,fmt,total); label=IQ_NAMES[fmt];
+        notes.push('Format '+IQ_NAMES[fmt]+' chosen from '+how+'. If the plots look wrong, change it under Signal settings.');
+        const all=Math.floor(src.size/bp); if(all>d.re.length) notes.push('Only the first '+fint(d.re.length)+' of '+fint(all)+' samples were analysed.');
+      }
+      $('#fs').disabled=$('#fsU').disabled=lock;
+      if(lock) setUnit($('#fs'),$('#fsU'),fs);
+      $('#fsHint').textContent=lock?'Stored in the WAV header, so it is locked.':'Raw IQ files do not store the sample rate. Set it to match the capture.';
+      if(!(fs>0)||!isFinite(fs)) throw new Error('Enter a sample rate greater than zero.');
+      return {re:d.re,im:d.im,complex:d.complex,fs,label,notes};
+    });
+
+    const P=await stage(id,'pre',async()=>{
+      const {re,im,complex}=D,N=re.length,x=new Float32Array(N),y=complex?new Float32Array(N):null;
+      let bad=0,mI=0,mQ=0,clip=0;
+      for(let i=0;i<N;i++){let a=re[i];if(!isFinite(a)){a=0;bad++;}x[i]=a;mI+=a;if(Math.abs(a)>=0.999)clip++;
+        if(complex){let b=im[i];if(!isFinite(b)){b=0;bad++;}y[i]=b;mQ+=b;if(Math.abs(b)>=0.999)clip++;}}
+      mI/=N;mQ/=N; const dc=$('#dc').checked;
+      if(dc){for(let i=0;i<N;i++){x[i]-=mI;if(complex)y[i]-=mQ;}}
+      let pk=0;for(let i=0;i<N;i++){const m=complex?Math.hypot(x[i],y[i]):Math.abs(x[i]);if(m>pk)pk=m;}
+      let scale=1;if($('#norm').checked&&pk>0){scale=1/pk;for(let i=0;i<N;i++){x[i]*=scale;if(complex)y[i]*=scale;}}
+      return {x,y,complex,N,mI,mQ,bad,clip:clip/(N*(complex?2:1)),scale,dc};
+    });
+
+    const T=await stage(id,'time',async()=>{
+      const {x,y,complex,N}=P,fs=D.fs,env=new Float32Array(N);
+      let sM=0,sM2=0,pk=0,sI=0,sQ=0,sIQ=0,zc=0;
+      for(let i=0;i<N;i++){const a=x[i],b=complex?y[i]:0,m=complex?Math.hypot(a,b):Math.abs(a);
+        env[i]=m;sM+=m;sM2+=m*m;if(m>pk)pk=m;sI+=a*a;sQ+=b*b;sIQ+=a*b;if(i&&((a>0)!==(x[i-1]>0)))zc++;}
+      const rms=Math.sqrt(sM2/N),mean=sM/N,envVar=mean>0?Math.sqrt(Math.max(0,sM2/N-mean*mean))/mean:0;
+      const T={peak:pk,rms,mean,envVar,crest:dbfs(pk/rms),bursts:0,duty:null,bursty:false,
+        rmsI:Math.sqrt(sI/N),rmsQ:complex?Math.sqrt(sQ/N):null,imb:null,corr:null,zcHz:complex?null:zc/(2*N/fs),
+        constEnv:false,ifMean:null,ifSpan:null};
+      if(complex){T.imb=20*Math.log10(T.rmsI/T.rmsQ);T.corr=sIQ/Math.sqrt(sI*sQ);}
+      const blk=256,nb=Math.floor(N/blk);
+      if(nb>=8){const bp=new Float64Array(nb);for(let k=0;k<nb;k++){let s=0;for(let i=k*blk;i<(k+1)*blk;i++)s+=env[i]*env[i];bp[k]=s/blk;}
+        const lo=pctl(bp,0.1),hi=pctl(bp,0.99);
+        if(lo>0&&hi>lo*10){const thr=Math.sqrt(lo*hi);let on=0,prev=false;for(let k=0;k<nb;k++){const a=bp[k]>thr;if(a){on++;if(!prev)T.bursts++;}prev=a;}
+          T.bursty=T.bursts>0&&on<nb*0.98;T.duty=on/nb;}}
+      if(complex){const lim=Math.min(N,262144),fa=new Float32Array(lim),ea=new Float32Array(lim);let c=0;
+        for(let i=1;i<lim;i++)if(env[i]>0.5*pk&&env[i-1]>0.5*pk){fa[c]=Math.atan2(y[i]*x[i-1]-x[i]*y[i-1],x[i]*x[i-1]+y[i]*y[i-1]);ea[c]=env[i];c++;}
+        if(c>256){let m=0,m2=0;for(let i=0;i<c;i++){m+=ea[i];m2+=ea[i]*ea[i];}m/=c;const cv=Math.sqrt(Math.max(0,m2/c-m*m))/m;
+          if(cv<0.08){const f=fa.subarray(0,c);let s=0;for(let i=0;i<c;i++)s+=f[i];const srt=Float32Array.from(f).sort(),k=fs/(2*Math.PI);
+            T.constEnv=true;T.ifMean=s/c*k;T.ifSpan=(srt[Math.floor(c*0.98)]-srt[Math.floor(c*0.02)])*k;}}}
+      return T;
+    });
+
+    const F=await stage(id,'freq',async()=>{
+      const n=+$('#nfft').value,kind=$('#win').value,fs=D.fs,{N,complex}=P,w=makeWindow(kind,n);let ws=0;for(let i=0;i<n;i++)ws+=w[i];
+      const bins=complex?n:(n>>1)+1,fft=getFFT(n),fr=new Float64Array(n),fi=new Float64Array(n),out=new Float64Array(bins),acc=new Float64Array(bins);
+      const S=N>=n?Math.min(128,Math.floor((N-n)/(n/2))+1):1;
+      for(let s=0;s<S;s++){const st=S>1?Math.floor(s*(N-n)/(S-1)):0;spectrum(P,st,n,w,ws,fft,fr,fi,out);for(let k=0;k<bins;k++)acc[k]+=out[k];}
+      const psd=new Float64Array(bins);let maxDb=-Infinity;
+      for(let k=0;k<bins;k++){psd[k]=10*Math.log10(acc[k]/S+1e-20);if(psd[k]>maxDb)maxDb=psd[k];}
+      await sleep(0);
+      const ns=Math.min(1024,n),wg=makeWindow(kind,ns);let wsg=0;for(let i=0;i<ns;i++)wsg+=wg[i];
+      const bg=complex?ns:(ns>>1)+1,FN=Math.min(MAX_FRAMES,Math.max(1,Math.floor(N/ns))),fg=getFFT(ns),gr=new Float64Array(ns),gi=new Float64Array(ns),go=new Float64Array(bg),data=new Float32Array(FN*bg);
+      let last=0;
+      for(let r=0;r<FN;r++){const st=FN>1?Math.floor(r*Math.max(0,N-ns)/(FN-1)):0;last=st;spectrum(P,st,ns,wg,wsg,fg,gr,gi,go);for(let k=0;k<bg;k++)data[r*bg+k]=10*Math.log10(go[k]+1e-20);}
+      return {n,bins,psd,f0:complex?-fs/2:0,df:fs/n,floorDb:pctl(psd,0.15),maxDb,S,kind,
+        sg:{data,FN,bins:bg,f0:complex?-fs/2:0,df:fs/ns,tEnd:(last+ns)/fs}};
+    });
+
+    const A=await stage(id,'param',async()=>{
+      const {psd,bins,f0,df,floorDb,maxDb}=F,fs=D.fs,sep=Math.max(4,Math.round(bins/128)),cand=[];
+      for(let i=1;i<bins-1;i++)if(psd[i]>floorDb+10&&psd[i]>=psd[i-1]&&psd[i]>psd[i+1])cand.push(i);
+      cand.sort((a,b)=>psd[b]-psd[a]);
+      const peaks=[];
+      for(const i of cand){if(peaks.length>=8)break;if(peaks.some(p=>Math.abs(p.i-i)<sep))continue;
+        const a=psd[i-1],b=psd[i],c=psd[i+1],den=a-2*b+c,d=den?0.5*(a-c)/den:0;
+        peaks.push({i,f:f0+(i+d)*df,p:b-0.25*(a-c)*d,over:b-floorDb});}
+      const fl=Math.pow(10,floorDb/10),net=new Float64Array(bins);let tot=0,cen=0;
+      for(let i=0;i<bins;i++){net[i]=Math.max(0,Math.pow(10,psd[i]/10)-fl);tot+=net[i];cen+=net[i]*(f0+i*df);}
+      const has=maxDb-floorDb>=6&&tot>0,R={peaks,has,floorDb,maxDb,ptf:maxDb-floorDb,obw:null,obwLo:null,obwHi:null,bw3:null,centroid:null,snr:null,hints:[]};
+      if(has){let c=0,lo=0,hi=bins-1;for(let i=0;i<bins;i++){c+=net[i];if(c>=0.005*tot){lo=i;break;}}
+        c=0;for(let i=0;i<bins;i++){c+=net[i];if(c>=0.995*tot){hi=i;break;}}
+        R.obw=(hi-lo+1)*df;R.obwLo=f0+lo*df;R.obwHi=f0+hi*df;R.centroid=cen/tot;
+        let sig2=0;for(let i=lo;i<=hi;i++)sig2+=net[i];R.snr=10*Math.log10(sig2/(fl*(hi-lo+1)));
+        const sm=new Float64Array(bins);for(let i=0;i<bins;i++){let s=0,k=0;for(let j=Math.max(0,i-2);j<=Math.min(bins-1,i+2);j++){s+=Math.pow(10,psd[j]/10);k++;}sm[i]=s/k;}
+        let m=0;for(let i=1;i<bins;i++)if(sm[i]>sm[m])m=i;let l=m,r=m;while(l>0&&sm[l-1]>sm[m]/2)l--;while(r<bins-1&&sm[r+1]>sm[m]/2)r++;R.bw3=(r-l+1)*df;}
+      const h=R.hints;
+      if(!has) h.push('No clear signal above the noise floor');
+      else if(!P.complex) h.push('Real-valued signal, typical of audio or baseband data');
+      else{if(T.bursty)h.push('Bursty or pulsed transmission');
+        if(T.constEnv)h.push(T.ifSpan<0.01*fs?'Constant-envelope carrier with little frequency movement (CW-like)':'Constant envelope with moving frequency (FM, FSK or chirp)');
+        else if(T.envVar>0.15)h.push('Varying envelope, consistent with AM or a linear digital modulation such as PSK or QAM');}
+      return R;
+    });
+
+    /* ----- visualize ----- */
+    ST={D,P,T,F,A,src};
+    await stage(id,'viz',async()=>{
+      $('#results').hidden=false;
+      $('#tLegend').innerHTML=P.complex?'<span><i style="background:'+C.i+'"></i>I</span><span><i style="background:'+C.q+'"></i>Q</span>':'<span><i style="background:'+C.i+'"></i>Amplitude</span>';
+      $('#specInfo').textContent='Bin width '+fhz(F.df)+' · '+F.S+' averages · '+F.kind;
+      $('#sgInfo').textContent=fint(F.sg.FN)+' frames · '+ftime(F.sg.tEnd)+' span';
+      drawAll();
+    });
+
+    await stage(id,'report',async()=>{
+      const fc=getFc(),f=P.complex,pk=A.peaks[0];
+      const J={tool:'SIGNALIQ prototype',generated:new Date().toISOString(),
+        file:{name:src.name,size_bytes:src.size,format:D.label},
+        acquisition:{sample_rate_hz:D.fs,centre_frequency_hz:fc,samples_analysed:P.N,duration_s:P.N/D.fs,complex:f},
+        preprocessing:{dc_removed:P.dc,normalized:$('#norm').checked,non_finite_replaced:P.bad,window:F.kind,fft_size:F.n,averages:F.S},
+        time_domain:{peak:T.peak,rms:T.rms,crest_factor_db:T.crest,dc_offset_i:P.mI,dc_offset_q:f?P.mQ:null,clipped_fraction:P.clip,envelope_variation:T.envVar,
+          rms_i:f?T.rmsI:null,rms_q:T.rmsQ,iq_amplitude_imbalance_db:T.imb,iq_correlation:T.corr,burst_count:T.bursts,duty_cycle:T.duty,
+          inst_frequency_mean_hz:T.ifMean,inst_frequency_span_hz:T.ifSpan,zero_crossing_frequency_hz:T.zcHz},
+        frequency_domain:{bin_width_hz:F.df,noise_floor_db:A.floorDb,max_level_db:A.maxDb,peak_to_floor_db:A.ptf,signal_detected:A.has,
+          occupied_bandwidth_99pct_hz:A.obw,occupied_low_hz:A.obwLo,occupied_high_hz:A.obwHi,bandwidth_3db_hz:A.bw3,spectral_centroid_hz:A.centroid,snr_estimate_db:A.snr},
+        peaks:A.peaks.map((p,k)=>({rank:k+1,offset_hz:p.f,rf_hz:fc!=null&&f?fc+p.f:null,level_db:p.p,above_floor_db:p.over})),
+        signal_type_hints:A.hints};
+      ST.report=J;
+      $('#sFile').textContent=src.name;
+      $('#sBadges').innerHTML=[D.label,f?'Complex IQ':'Real signal',fhz(D.fs)+' sample rate',src.sample?'Generated in browser':fbytes(src.size)].map(b=>'<span class="badge">'+esc(b)+'</span> ').join('');
+      const notes=D.notes.slice();
+      if(P.bad) notes.push(fint(P.bad)+' non-finite values were replaced with zero.');
+      if(P.clip>0.01) notes.push('About '+(P.clip*100).toFixed(1)+'% of samples sit at full scale, so the input may be clipped.');
+      if(!A.has) notes.push('The spectrum is nearly flat, so bandwidth and SNR are not reported.');
+      else if(A.obw>0.7*D.fs) notes.push('The signal fills most of the band, so the noise floor and SNR are rough.');
+      $('#sNotes').innerHTML=notes.map(n=>'<li>'+esc(n)+'</li>').join('');
+      const met=[['Samples',fint(P.N)],['Duration',ftime(P.N/D.fs)],['RMS',fnum(T.rms)],['Peak',fnum(T.peak)],['Crest factor',fdb(T.crest)],
+        ['Strongest peak',pk?fhz(pk.f):'—'],['Bandwidth (99%)',A.obw!=null?fhz(A.obw):'—'],['SNR estimate',A.snr!=null?fdb(A.snr):'—']];
+      $('#metrics').innerHTML=met.map(m=>'<div><dt>'+m[0]+'</dt><dd>'+esc(m[1])+'</dd></div>').join('');
+      const g=t=>'<tr class="grp"><th colspan="2">'+t+'</th></tr>',r=(k,v)=>v==null?'':'<tr><th>'+k+'</th><td>'+esc(v)+'</td></tr>';
+      $('#ptable').innerHTML=
+        g('Acquisition')+r('Sample rate',fhz(D.fs))+r('Centre frequency',fc!=null?fhz(fc):null)+r('Samples analysed',fint(P.N))+r('Duration',ftime(P.N/D.fs))+
+        g('Amplitude')+r('Peak',fnum(T.peak))+r('RMS',fnum(T.rms))+r('Crest factor',fdb(T.crest))+r('DC offset',f?'I '+fnum(P.mI)+', Q '+fnum(P.mQ):fnum(P.mI))+r('Clipped samples',(P.clip*100).toFixed(2)+' %')+
+        (f?g('IQ balance')+r('I RMS',fnum(T.rmsI))+r('Q RMS',fnum(T.rmsQ))+r('Amplitude imbalance',fdb(T.imb,2))+r('I/Q correlation',fnum(T.corr,3)):'')+
+        g('Spectrum')+r('Bin width',fhz(F.df))+r('Noise floor',fdb(A.floorDb))+r('Peak above floor',fdb(A.ptf))+r('Occupied bandwidth (99%)',A.obw!=null?fhz(A.obw):null)+
+        r('Occupied range',A.obw!=null?fhz(A.obwLo)+' to '+fhz(A.obwHi):null)+r('3 dB bandwidth',A.bw3!=null?fhz(A.bw3):null)+r('Spectral centroid',A.centroid!=null?fhz(A.centroid):null)+r('SNR estimate',A.snr!=null?fdb(A.snr):null)+
+        g('Behaviour')+r('Envelope variation (σ/µ)',fnum(T.envVar,3))+r('Bursts',T.duty!=null?T.bursts+' bursts, duty cycle '+(T.duty*100).toFixed(0)+' %':'none detected')+
+        r('Instantaneous frequency',T.ifMean!=null?'mean '+fhz(T.ifMean)+', span '+fhz(T.ifSpan):null)+r('Zero-crossing frequency',T.zcHz!=null?fhz(T.zcHz):null)+
+        g('Signal type hint (heuristic)')+r('Hint',A.hints.join('; ')||'—');
+      $('#peaks').innerHTML='<thead><tr><th>#</th><th>'+(f?'Offset':'Frequency')+'</th><th>Level</th><th>Over floor</th></tr></thead><tbody>'+
+        (A.peaks.length?A.peaks.map((p,k)=>'<tr><td>'+(k+1)+'</td><td>'+esc(fhz(p.f))+(fc!=null&&f?'<br><small>RF '+esc(fhz(fc+p.f))+'</small>':'')+'</td><td>'+fdb(p.p)+'</td><td>'+fdb(p.over)+'</td></tr>').join(''):'<tr><td colspan="4">No peaks 10 dB above the noise floor</td></tr>')+'</tbody>';
+      $('#jsonPre').textContent=JSON.stringify(J,null,2); $('#rMsg').textContent='';
+    });
+  }catch(e){
+    if(e===CANCEL) return;
+    const a=$('#alert');a.innerHTML='<b>Analysis stopped.</b> '+esc(e&&e.message||e);a.hidden=false;$('#results').hidden=true;
+  }
+  if(id===runId){$('#results').classList.remove('busy');stopLoader(id);}
+}
+function resetPipe(){STEPS.forEach(s=>setStep(s,'',''));}
+
+/* ---------- drawing ---------- */
+function setup(sel){const cv=$(sel),p=cv.parentElement,dpr=window.devicePixelRatio||1,w=p.clientWidth,h=p.clientHeight;
+  cv.width=Math.max(1,Math.round(w*dpr));cv.height=Math.max(1,Math.round(h*dpr));
+  const c=cv.getContext('2d');c.setTransform(dpr,0,0,dpr,0,0);c.fillStyle=C.bg;c.fillRect(0,0,w,h);return {c,w,h,B:{l:54,t:8,r:w-10,b:h-22}};}
+function ticks(a,b,n){const span=b-a;if(!(span>0))return [a];const raw=span/n,mag=Math.pow(10,Math.floor(Math.log10(raw))),q=raw/mag,st=(q<1.5?1:q<3.5?2:q<7.5?5:10)*mag,o=[];
+  for(let v=Math.ceil(a/st-1e-9)*st;v<=b+st*1e-9;v+=st)o.push(Math.abs(v)<st*1e-9?0:v);return o;}
+function axes(c,B,xa,ya,xf,yf,nx,ny,flip){
+  c.font='11px '+FONT;c.lineWidth=1;c.strokeStyle=C.grid;c.fillStyle=C.ink;c.textAlign='center';c.textBaseline='top';
+  ticks(xa[0],xa[1],nx).forEach(v=>{const x=Math.round(B.l+(v-xa[0])/(xa[1]-xa[0])*(B.r-B.l))+.5;c.beginPath();c.moveTo(x,B.t);c.lineTo(x,B.b);c.stroke();c.fillText(xf(v),Math.min(B.r-14,Math.max(B.l+14,x)),B.b+5);});
+  c.textAlign='right';c.textBaseline='middle';
+  ticks(ya[0],ya[1],ny).forEach(v=>{const q=(v-ya[0])/(ya[1]-ya[0]),y=Math.round(flip?B.t+q*(B.b-B.t):B.b-q*(B.b-B.t))+.5;c.beginPath();c.moveTo(B.l,y);c.lineTo(B.r,y);c.stroke();c.fillText(yf(v),B.l-6,y);});
+  c.strokeStyle=C.ink;c.globalAlpha=.5;c.strokeRect(B.l+.5,B.t+.5,B.r-B.l,B.b-B.t);c.globalAlpha=1;
+}
+function drawTime(){
+  if(!ST) return; const {P,D}=ST,{x,y,complex,N}=P,len=Math.min(N,+$('#tWin').value),st=Math.round(+$('#tPos').value/1000*(N-len));
+  const {c,w,h,B}=setup('#cvTime');let m=1e-9;
+  for(let i=st;i<st+len;i++){m=Math.max(m,Math.abs(x[i]));if(complex)m=Math.max(m,Math.abs(y[i]));}m*=1.1;
+  axes(c,B,[st/D.fs,(st+len)/D.fs],[-m,m],ftime,v=>fnum(v,2),5,4);
+  const pw=B.r-B.l,py=v=>B.b-(v+m)/(2*m)*(B.b-B.t);
+  const tr=(a,col)=>{c.strokeStyle=col;c.lineWidth=1.3;c.beginPath();
+    if(len<=pw*2){for(let i=0;i<len;i++){const px=B.l+i/(len-1||1)*pw,q=py(a[st+i]);i?c.lineTo(px,q):c.moveTo(px,q);}}
+    else{for(let px=0;px<pw;px++){const s0=st+Math.floor(px*len/pw),s1=st+Math.floor((px+1)*len/pw);let lo=Infinity,hi=-Infinity;for(let i=s0;i<Math.max(s1,s0+1);i++){if(a[i]<lo)lo=a[i];if(a[i]>hi)hi=a[i];}c.moveTo(B.l+px+.5,py(hi));c.lineTo(B.l+px+.5,py(lo));}}
+    c.stroke();};
+  tr(x,C.i);if(complex)tr(y,C.q);
+}
+function drawSpec(){
+  if(!ST) return; const {F,A}=ST,{c,w,h,B}=setup('#cvSpec');
+  const top=F.maxDb+6,bot=Math.max(F.floorDb-12,top-140),xa=[F.f0,F.f0+(F.bins-1)*F.df],pw=B.r-B.l;
+  const yy=v=>B.b-Math.min(1,Math.max(0,(v-bot)/(top-bot)))*(B.b-B.t);
+  axes(c,B,xa,[bot,top],fhz,v=>String(Math.round(v)),5,5);
+  c.strokeStyle=C.ok;c.setLineDash([5,4]);c.beginPath();c.moveTo(B.l,yy(F.floorDb));c.lineTo(B.r,yy(F.floorDb));c.stroke();c.setLineDash([]);
+  c.strokeStyle=C.i;c.lineWidth=1.3;c.beginPath();
+  if(F.bins<=pw*2){for(let i=0;i<F.bins;i++){const px=B.l+i/(F.bins-1)*pw;i?c.lineTo(px,yy(F.psd[i])):c.moveTo(px,yy(F.psd[i]));}}
+  else{for(let px=0;px<pw;px++){const a=Math.floor(px*F.bins/pw),b=Math.max(a+1,Math.floor((px+1)*F.bins/pw));let mx=-Infinity;for(let i=a;i<b;i++)if(F.psd[i]>mx)mx=F.psd[i];px?c.lineTo(B.l+px,yy(mx)):c.moveTo(B.l+px,yy(mx));}}
+  c.stroke();
+  c.fillStyle=C.q;c.textAlign='center';c.textBaseline='bottom';c.font='11px '+FONT;
+  A.peaks.slice(0,5).forEach((p,k)=>{const px=B.l+(p.f-xa[0])/(xa[1]-xa[0])*pw,py=yy(p.p);c.beginPath();c.moveTo(px,py-3);c.lineTo(px-4,py-10);c.lineTo(px+4,py-10);c.fill();
+    if(k<3)c.fillText(fhz(p.f,3),Math.min(B.r-30,Math.max(B.l+30,px)),py-11);});
+}
+const LUT=(function(){const s=[[10,22,38],[0,90,180],[79,195,247],[255,214,64],[232,80,40]];
+  return Array.from({length:256},(_,i)=>{const p=i/255*4,k=Math.min(3,p|0),f=p-k;return s[k].map((v,j)=>v+(s[k+1][j]-v)*f);});})();
+function drawSg(){
+  if(!ST) return; const {F}=ST,g=F.sg,{c,w,h,B}=setup('#cvSg');
+  const off=document.createElement('canvas');off.width=g.bins;off.height=g.FN;const oc=off.getContext('2d'),im=oc.createImageData(g.bins,g.FN),lo=F.floorDb-3,hi=Math.max(F.maxDb,lo+1);
+  for(let i=0;i<g.FN*g.bins;i++){const t=Math.min(255,Math.max(0,Math.round((g.data[i]-lo)/(hi-lo)*255))),k=LUT[t],o=i*4;im.data[o]=k[0];im.data[o+1]=k[1];im.data[o+2]=k[2];im.data[o+3]=255;}
+  oc.putImageData(im,0,0);c.imageSmoothingEnabled=true;c.drawImage(off,B.l,B.t,B.r-B.l,B.b-B.t);
+  c.globalAlpha=.45;axes(c,B,[g.f0,g.f0+(g.bins-1)*g.df],[0,g.tEnd],fhz,ftime,5,4,true);c.globalAlpha=1;
+}
+function drawConst(){
+  if(!ST) return; const {P,T}=ST,{c,w,h}=setup('#cvC'),m=Math.max(T.peak,1e-9)*1.15;
+  if(P.complex){
+    const side=Math.max(60,Math.min(w-70,h-32)),l=Math.round((w-side)/2)+16,B={l,r:l+side,t:8,b:8+side},pts=Math.min(P.N,20000),step=Math.max(1,Math.floor(P.N/pts));
+    axes(c,B,[-m,m],[-m,m],v=>fnum(v,2),v=>fnum(v,2),4,4);c.fillStyle='rgba(79,195,247,.35)';
+    for(let i=0;i<P.N;i+=step){const px=B.l+(P.x[i]+m)/(2*m)*side,py=B.b-(P.y[i]+m)/(2*m)*side;c.fillRect(px-1,py-1,2,2);}
+    c.fillStyle=C.ink;c.textAlign='center';c.textBaseline='top';c.fillText('I',(B.l+B.r)/2,B.b+16>h?h-12:B.b+16);
+  } else {
+    const {B}=setup('#cvC'),nb=64,cnt=new Float64Array(nb);
+    for(let i=0;i<P.N;i++){const k=Math.min(nb-1,Math.max(0,Math.floor((P.x[i]+m)/(2*m)*nb)));cnt[k]++;}
+    let mx=0;for(let k=0;k<nb;k++)mx=Math.max(mx,cnt[k]);const top=mx/P.N*100*1.1;
+    axes(c,B,[-m,m],[0,top],v=>fnum(v,2),v=>fnum(v,2)+'%',4,4);c.fillStyle=C.i;
+    for(let k=0;k<nb;k++){const bw=(B.r-B.l)/nb,bh=cnt[k]/P.N*100/top*(B.b-B.t);c.fillRect(B.l+k*bw+1,B.b-bh,Math.max(1,bw-1),bh);}
+  }
+}
+function drawAll(){
+  if(!ST) return; const cx=ST.P.complex;
+  $('#cTitle').textContent=cx?'I/Q constellation':'Amplitude distribution';
+  $('#cInfo').textContent=cx?fint(Math.min(ST.P.N,20000))+' points · I/Q imbalance '+fdb(ST.T.imb,2):'64 bins · '+fint(ST.P.N)+' samples';
+  drawTime();drawSpec();drawSg();drawConst();
+}
+
+/* ---------- inputs ---------- */
+function start(o){cur=o;$('#empty').hidden=true;$('#results').hidden=true;analyze(cur);}
+function loadFile(f){
+  if(!f) return; const g=guessFromName(f.name);
+  $('#fc').value='';if(g.fs)setUnit($('#fs'),$('#fsU'),g.fs);if(g.fc)setUnit($('#fc'),$('#fcU'),g.fc);
+  start({name:f.name,size:f.size,file:f,buf:null});
+}
+function loadSample(k){
+  const s=genSample(k);setUnit($('#fs'),$('#fsU'),s.fs);if(s.fc)setUnit($('#fc'),$('#fcU'),s.fc);else $('#fc').value='';
+  start({name:s.name,size:s.re.length*(s.complex?8:4),sample:s,wav:!s.complex});
+}
+$('#file').addEventListener('change',e=>{loadFile(e.target.files[0]);e.target.value='';});
+const dz=$('#drop');
+['dragenter','dragover'].forEach(t=>dz.addEventListener(t,e=>{e.preventDefault();dz.classList.add('over');}));
+['dragleave','drop'].forEach(t=>dz.addEventListener(t,e=>{e.preventDefault();dz.classList.remove('over');}));
+dz.addEventListener('drop',e=>loadFile(e.dataTransfer&&e.dataTransfer.files[0]));
+$$('[data-sample]').forEach(b=>b.addEventListener('click',()=>loadSample(b.dataset.sample)));
+['iqFormat','wavMode','fs','fsU','fc','fcU','dc','norm','win','nfft'].forEach(id=>$('#'+id).addEventListener('change',()=>{if(cur)analyze(cur);}));
+$('#tWin').addEventListener('change',drawTime);$('#tPos').addEventListener('input',drawTime);
+let rz;window.addEventListener('resize',()=>{clearTimeout(rz);rz=setTimeout(drawAll,120);});
+
+/* ---------- report actions ---------- */
+function flat(o,p,out){Object.keys(o).forEach(k=>{const v=o[k],key=p?p+'.'+k:k;if(v&&typeof v==='object')flat(v,key,out);else out.push(key+','+JSON.stringify(v==null?'':v));});return out;}
+function save(name,text,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);}
+const base=()=>(ST.src.name||'signal').replace(/\.[^.]+$/,'').replace(/[^\w.-]+/g,'_');
+$('#bJson').addEventListener('click',()=>ST&&save(base()+'_report.json',JSON.stringify(ST.report,null,2),'application/json'));
+$('#bCsv').addEventListener('click',()=>ST&&save(base()+'_report.csv','key,value\n'+flat(ST.report,'',[]).join('\n'),'text/csv'));
+$('#bCopy').addEventListener('click',async()=>{
+  if(!ST||!ST.report) return; const t=JSON.stringify(ST.report,null,2),m=$('#rMsg');
+  try{await navigator.clipboard.writeText(t);m.textContent='JSON copied to the clipboard.';}
+  catch(e){const pre=$('#jsonPre');pre.parentElement.open=true;const r=document.createRange();r.selectNodeContents(pre);const s=getSelection();s.removeAllRanges();s.addRange(r);m.textContent='Copy was blocked. The JSON is selected below, so press Ctrl+C or Cmd+C.';}
+});
+
+(function(){let d='M0,20';for(let x=0;x<=320;x+=2){const e=0.55+0.45*Math.sin(2*Math.PI*x/200);d+=' L'+x+','+(20-13*e*(Math.sin(2*Math.PI*x/100)+0.45*Math.sin(2*Math.PI*x/25)))/1.2;}$('#lWave').setAttribute('d',d);})();
+function cancelRun(){runId++;clearInterval(ltimer);$('#loader').hidden=true;resetPipe();$('#results').classList.remove('busy');$('#empty').hidden=!$('#results').hidden?true:false;
+  const a=$('#alert');a.innerHTML='<b>Analysis cancelled.</b> Load a file, pick a sample or change a setting to run it again.';a.hidden=false;}
+$('#lCancel').addEventListener('click',cancelRun);
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#loader').hidden)cancelRun();});
+})();
+</script>
+</body>
+</html>
